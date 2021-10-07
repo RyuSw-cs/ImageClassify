@@ -8,8 +8,6 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.ImageDecoder;
-import android.graphics.drawable.BitmapDrawable;
-import android.media.Image;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -27,15 +25,13 @@ public class GalleryActivity extends AppCompatActivity {
     public static final int GALLERY_IMAGE_REQUEST_CODE = 1;
     private Classifier cls;
     private ImageView imageView;
-    private Button classifyButton;
+    private Button galleryButton;
     private TextView resultText;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_gallery);
         init();
-
-
         cls = new Classifier(this);
         Bitmap icon = BitmapFactory.decodeResource(getApplicationContext().getResources(),R.drawable.paper15);
         try{
@@ -43,19 +39,22 @@ public class GalleryActivity extends AppCompatActivity {
         } catch(IOException e){
             Log.d("DigitClassifier", "failed to init Classifier",e);
         }
-        classifyButton.setOnClickListener(view->{
-            getImageFromGallery();
+        galleryButton.setOnClickListener(view->{
+
         });
 
     }
     private void init(){
          imageView = findViewById(R.id.imageView);
-         classifyButton = findViewById(R.id.classifyButton);
+         galleryButton = findViewById(R.id.galleryButton);
          resultText = findViewById(R.id.resultText);
     }
     private void getImageFromGallery(){
         Intent intent = new Intent(Intent.ACTION_GET_CONTENT).setType("image/*"); // 기기에 저장된 모든 이미지를 가져올 수 있음.
         startActivityForResult(intent,GALLERY_IMAGE_REQUEST_CODE); //데이터를 전달 받기 위함, 상수 코드 사용
+    }
+    private void getImageFromCamera(){
+
     }
 
     @Override

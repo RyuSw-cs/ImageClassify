@@ -20,7 +20,7 @@
 
     <LinearLayout
         android:id="@+id/classifyLinearLayout"
-        android:layout_width="wrap_content"
+        android:layout_width="150dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="12dp"
         android:layout_marginTop="40dp"
@@ -31,12 +31,12 @@
         app:layout_constraintTop_toBottomOf="@+id/imageView">
 
         <Button
-            android:id="@+id/galleryButton"
+            android:id="@+id/cameraButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="갤러리에서 가져오기"
+            android:layout_weight="1"
+            android:text="카메라"
             android:textSize="14sp" />
-
     </LinearLayout>
 
     <TextView
