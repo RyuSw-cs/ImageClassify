@@ -1,8 +1,15 @@
 package com.example.imageclassifier;
 
 import android.Manifest;
+import android.content.Context;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.hardware.camera2.CameraAccessException;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CameraManager;
 import android.os.Bundle;
+import android.util.Size;
+import android.view.Surface;
 import android.view.WindowManager;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -10,6 +17,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.fragment.app.Fragment;
 
 import java.io.IOException;
 
@@ -19,6 +27,13 @@ public class RealtimeCameraActivity extends AppCompatActivity {
 
     private TextView textView;
     private Classifier cls;
+
+    private int previewWidth = 0;
+    private int previewHeight = 0;
+    private int sensorOrientation = 0;
+
+    private Bitmap rgbFrameBitmap = null;
+
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -40,8 +55,49 @@ public class RealtimeCameraActivity extends AppCompatActivity {
         }
 
     }
-    void init(){
+
+
+    private void init(){
         textView = findViewById(R.id.result);
+    }
+    
+    protected void setFragment(){
+        Size inputSize = cls.getModelInputSize();
+        String cameraId = chooseCamera();
+        if(inputSize.getWidth() > 0 && inputSize.getHeight() > 0 && cameraId != null){
+            //프래그먼트 생성
+        }
+
+    }
+
+    protected int getScreenOrientation(){
+        switch (getDisplay().getRotation()){
+            case Surface.ROTATION_270:
+                return 270;
+            case Surface.ROTATION_180:
+                return 180;
+            case Surface.ROTATION_90:
+                return 90;
+            default:
+                return 0;
+        }
+    }
+
+    @Nullable
+    private String chooseCamera(){
+        final CameraManager manager = (CameraManager)getSystemService(Context.CAMERA_SERVICE);
+        try{
+            for(final String cameraId : manager.getCameraIdList()){
+                final CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
+                final Integer facing = characteristics.get(CameraCharacteristics.LENS_FACING);
+                if(facing != null && facing == CameraCharacteristics.LENS_FACING_BACK){
+                    return cameraId;
+                }
+            }
+        }catch (CameraAccessException e){
+            e.printStackTrace();
+        }
+        return null;
     }
 
     @Override

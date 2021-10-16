@@ -7,6 +7,7 @@ import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 import android.util.Log;
 import android.util.Pair;
+import android.util.Size;
 
 import org.tensorflow.lite.Interpreter;
 import org.tensorflow.lite.Tensor;
@@ -41,6 +42,7 @@ public class Classifier {
     private TensorImage inputImage;
     private TensorBuffer outputBuffer;
     private List<String> labels;
+    private boolean isInitialized = false;
     /*
     클래스가 생성되는 시점에 context를 적재
      */
@@ -55,8 +57,18 @@ public class Classifier {
         model = Model.createModel(context,MODEL_NAME);
         initModelShape();
         labels = FileUtil.loadLabels(context, LABEL_FILE);
+        isInitialized = true;
     }
 
+    public boolean isInitialized(){
+        return isInitialized;
+    }
+    public Size getModelInputSize(){
+        if(!isInitialized){
+            return new Size(0,0);
+        }
+        return new Size(modelInputWidth,modelInputHeight);
+    }
     /*
     모델 초기화
      */
@@ -123,8 +135,15 @@ public class Classifier {
     private Bitmap resizeBitmap(Bitmap bitmap){
         return Bitmap.createScaledBitmap(bitmap,modelInputWidth,modelInputHeight,false);
     }
+
     public void finish(){
-        if(model != null) model.close();
+        if(model != null) {
+            model.close();
+            isInitialized = false;
+        }
+
     }
+
+
 }
 
