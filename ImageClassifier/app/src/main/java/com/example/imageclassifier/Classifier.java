@@ -34,7 +34,7 @@ import java.util.Map;
 * 이미지 입력 시 추론하여 결과 값 해석
 * */
 public class Classifier {
-    private static final String MODEL_NAME = "classification.tflite";
+    private static final String MODEL_NAME = "model.tflite";
     private static final String LABEL_FILE = "labels.txt";
     private Context context;
     private Model model;//모델에 데이터를 입력하고 추론 결과를 전달받을 수 있는 클래스 (인터프리터의 확장판)
@@ -101,7 +101,6 @@ public class Classifier {
                 maxVal = f;
 
             }
-            Log.e(entry.getKey(), entry.getValue().toString() );
         }
         return new Pair<>(maxKey,maxVal);
     }

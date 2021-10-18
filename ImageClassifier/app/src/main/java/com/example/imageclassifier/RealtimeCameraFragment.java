@@ -1,5 +1,16 @@
 package com.example.imageclassifier;
 
+import android.annotation.SuppressLint;
+import android.app.Activity;
+import android.content.Context;
+import android.content.res.Configuration;
+import android.graphics.Matrix;
+import android.graphics.RectF;
+import android.graphics.SurfaceTexture;
+import android.hardware.camera2.CameraAccessException;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CameraManager;
+import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.ImageReader;
 import android.os.Bundle;
 
@@ -9,8 +20,18 @@ import androidx.fragment.app.Fragment;
 
 import android.util.Size;
 import android.view.LayoutInflater;
+import android.view.Surface;
+import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Toast;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 public class RealtimeCameraFragment extends Fragment {
 
@@ -19,6 +40,29 @@ public class RealtimeCameraFragment extends Fragment {
     private Size inputSize;
     private String cameraId;
     private AutoFitTextureView autoFitTextureView = null;
+    private int orientation;
+    private Size previewSize;
+    private Semaphore cameraOpenCloseLock = new Semaphore(1);
+    private final TextureView.SurfaceTextureListener surfaceTextureListener =
+       new TextureView.SurfaceTextureListener(){
+           @Override
+           public void onSurfaceTextureAvailable(final SurfaceTexture surfaceTexture, final int width, final int height) {
+
+           }
+           @Override
+           public void onSurfaceTextureSizeChanged(final SurfaceTexture surfaceTexture, final int width, final int height) {
+
+           }
+           @Override
+           public boolean onSurfaceTextureDestroyed(final SurfaceTexture surfaceTexture) {
+               return true;
+           }
+           @Override
+           public void onSurfaceTextureUpdated(final SurfaceTexture surfaceTexture) {
+
+           }
+    };
+
     public RealtimeCameraFragment(ConnectionCallback callback,
                                   ImageReader.OnImageAvailableListener imageAvailableListener,
                                   Size inputSize,
@@ -49,7 +93,102 @@ public class RealtimeCameraFragment extends Fragment {
          autoFitTextureView = view.findViewById(R.id.autoFitTextureView);
     }
 
+    @Override
+    public void onResume() {
+        super.onResume();
+        if(!autoFitTextureView.isAvailable()) autoFitTextureView.setSurfaceTextureListener(surfaceTextureListener);
+
+    }
+
+    @SuppressLint("MissingPermission")
+    private void openCamera(final int width, final int height){
+        final Activity activity = getActivity();
+        final CameraManager manager = (CameraManager)activity.getSystemService(Context.CAMERA_SERVICE);
+        setupCameraOutputs(manager);
+        configureTransform(width,height);
+        /*
+        try{
+            if(!cameraOpenCloseLock.tryAcquire(2500, TimeUnit.MILLISECONDS)){
+                Toast.makeText(getContext(),"카메라 락 타임아웃",Toast.LENGTH_LONG).show();
+                activity.finish();
+            }else{
+                //manager.openCamera(cameraId,,null);
+            }
+        }catch (final InterruptedException | CameraAccessException e){
+            e.printStackTrace();
+        }*/
+
+    }
+
+    private void setupCameraOutputs(CameraManager manager){
+        try{
+            final CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
+            final StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+            final int sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+            previewSize = chooseOptimalSize(map.getOutputSizes(SurfaceTexture.class),inputSize.getWidth(),inputSize.getHeight());
+            orientation = getResources().getConfiguration().orientation;
+            if(orientation == Configuration.ORIENTATION_LANDSCAPE){
+                autoFitTextureView.setAspectRatio(previewSize.getWidth(),previewSize.getHeight());
+            } else {
+                autoFitTextureView.setAspectRatio(previewSize.getHeight(),previewSize.getWidth());
+            }
+            connectionCallback.onPreviewSizeChosen(previewSize,sensorOrientation);
+        }catch (final CameraAccessException e){
+            e.printStackTrace();
+        }
+    }
+    protected Size chooseOptimalSize(final Size[] choices, final int width, final int height){
+        final int minSize = Math.min(width,height);
+        final Size desiredSize = new Size(width, height);
+
+        final List<Size> bigEnough = new ArrayList<>();
+        final List<Size> tooSmall = new ArrayList<>();
+        for(final Size option : choices){
+            if(option.equals(desiredSize)){
+                return desiredSize;
+            }
+            if(option.getHeight() >= minSize && option.getWidth() >= minSize){
+                bigEnough.add(option);
+            }else{
+                tooSmall.add(option);
+            }
+        }
+        if(bigEnough.size() > 0){
+            return Collections.min(bigEnough, new CompareSizeByArea());
+        } else{
+            return Collections.min(tooSmall, new CompareSizeByArea());
+        }
+    }
+
+    private void configureTransform(final int viewWidth, final int viewHeight){
+        final Activity activity = getActivity();
+        if(autoFitTextureView == null || previewSize == null || activity == null) return;
+        final int rotation = activity.getDisplay().getRotation();
+        final Matrix matrix = new Matrix();
+        final RectF viewRect = new RectF(0,0, viewWidth,viewHeight);
+        final RectF bufferRect = new RectF(0,0,previewSize.getHeight(),previewSize.getWidth())
+        final float centerX = viewRect.centerX();
+        final float centerY = viewRect.centerY();
+        if(Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation){
+            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY());
+            matrix.setRectToRect(viewRect,bufferRect,Matrix.ScaleToFit.FILL);
+            final float scale = Math.max((float)viewHeight / previewSize.getHeight(),(float)viewWidth/previewSize.getWidth());
+            matrix.postScale(scale,scale,centerX,centerY);
+            matrix.postRotate(90 * (rotation -2), centerX, centerY);
+        }else if (Surface.ROTATION_180 == rotation){
+            matrix.postRotate(180,centerX,centerY);
+        }
+        autoFitTextureView.setTransform(matrix);
+    }
     public interface  ConnectionCallback{
         void onPreviewSizeChosen(Size size, int cameraRotation);
     }
+
+    static class CompareSizeByArea implements Comparator<Size>{
+        @Override
+        public int compare(Size lhs, Size rhs) {
+            return Long.signum((long)lhs.getWidth() * lhs.getHeight() - (long) rhs.getWidth() * rhs.getHeight());
+        }
+    }
+
 }

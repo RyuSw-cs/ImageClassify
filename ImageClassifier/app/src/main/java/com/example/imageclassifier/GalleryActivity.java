@@ -40,7 +40,7 @@ public class GalleryActivity extends AppCompatActivity {
             Log.d("DigitClassifier", "failed to init Classifier",e);
         }
         galleryButton.setOnClickListener(view->{
-
+           getImageFromGallery();
         });
 
     }
@@ -52,9 +52,6 @@ public class GalleryActivity extends AppCompatActivity {
     private void getImageFromGallery(){
         Intent intent = new Intent(Intent.ACTION_GET_CONTENT).setType("image/*"); // 기기에 저장된 모든 이미지를 가져올 수 있음.
         startActivityForResult(intent,GALLERY_IMAGE_REQUEST_CODE); //데이터를 전달 받기 위함, 상수 코드 사용
-    }
-    private void getImageFromCamera(){
-
     }
 
     @Override

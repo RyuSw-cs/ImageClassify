@@ -60,7 +60,7 @@ public class RealtimeCameraActivity extends AppCompatActivity {
     private void init(){
         textView = findViewById(R.id.result);
     }
-    
+
     protected void setFragment(){
         Size inputSize = cls.getModelInputSize();
         String cameraId = chooseCamera();
