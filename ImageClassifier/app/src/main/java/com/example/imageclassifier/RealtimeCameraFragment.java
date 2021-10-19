@@ -4,12 +4,16 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
 import android.content.res.Configuration;
+import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
+import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
+import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.ImageReader;
 import android.os.Bundle;
@@ -27,6 +31,7 @@ import android.view.ViewGroup;
 import android.widget.Toast;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -43,34 +48,18 @@ public class RealtimeCameraFragment extends Fragment {
     private int orientation;
     private Size previewSize;
     private Semaphore cameraOpenCloseLock = new Semaphore(1);
-    private final TextureView.SurfaceTextureListener surfaceTextureListener =
-       new TextureView.SurfaceTextureListener(){
-           @Override
-           public void onSurfaceTextureAvailable(final SurfaceTexture surfaceTexture, final int width, final int height) {
-
-           }
-           @Override
-           public void onSurfaceTextureSizeChanged(final SurfaceTexture surfaceTexture, final int width, final int height) {
-
-           }
-           @Override
-           public boolean onSurfaceTextureDestroyed(final SurfaceTexture surfaceTexture) {
-               return true;
-           }
-           @Override
-           public void onSurfaceTextureUpdated(final SurfaceTexture surfaceTexture) {
-
-           }
-    };
-
+    private CameraDevice cameraDevice;
+    private CaptureRequest.Builder previewRequestBuilder;
+    private CameraCaptureSession captureSession;
+    private ImageReader previewReader;
     public RealtimeCameraFragment(ConnectionCallback callback,
                                   ImageReader.OnImageAvailableListener imageAvailableListener,
                                   Size inputSize,
                                   String cameraId) {
-         this.connectionCallback= callback;
-         this.imageAvailableListener = imageAvailableListener;
-         this.inputSize = inputSize;
-         this.cameraId = cameraId;
+        this.connectionCallback= callback;
+        this.imageAvailableListener = imageAvailableListener;
+        this.inputSize = inputSize;
+        this.cameraId = cameraId;
     }
 
 
@@ -90,7 +79,7 @@ public class RealtimeCameraFragment extends Fragment {
 
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
-         autoFitTextureView = view.findViewById(R.id.autoFitTextureView);
+        autoFitTextureView = view.findViewById(R.id.autoFitTextureView);
     }
 
     @Override
@@ -99,6 +88,69 @@ public class RealtimeCameraFragment extends Fragment {
         if(!autoFitTextureView.isAvailable()) autoFitTextureView.setSurfaceTextureListener(surfaceTextureListener);
 
     }
+    private final CameraDevice.StateCallback stateCallback = new CameraDevice.StateCallback() {
+        @Override
+        public void onOpened(final CameraDevice cd) {
+            cameraOpenCloseLock.release();
+            cameraDevice = cd;
+
+        }
+
+        @Override
+        public void onDisconnected(final CameraDevice cd) {
+              cameraOpenCloseLock.release();
+              cd.close();
+              cameraDevice = null;
+        }
+
+        @Override
+        public void onError(final CameraDevice cd, int i) {
+            cameraOpenCloseLock.release();
+            cd.close();
+            cameraDevice = null;
+            final Activity activity = getActivity();
+            if(activity != null){
+                activity.finish();
+            }
+        }
+    };
+    private final TextureView.SurfaceTextureListener surfaceTextureListener =
+       new TextureView.SurfaceTextureListener(){
+           @Override
+           public void onSurfaceTextureAvailable(final SurfaceTexture surfaceTexture, final int width, final int height) {
+
+           }
+           @Override
+           public void onSurfaceTextureSizeChanged(final SurfaceTexture surfaceTexture, final int width, final int height) {
+
+           }
+           @Override
+           public boolean onSurfaceTextureDestroyed(final SurfaceTexture surfaceTexture) {
+               return true;
+           }
+           @Override
+           public void onSurfaceTextureUpdated(final SurfaceTexture surfaceTexture) {
+
+           }
+    };
+    private final CameraCaptureSession.StateCallback sessionStateCallback = new CameraCaptureSession.StateCallback() {
+        @Override
+        public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
+            if(null == cameraDevice) return;
+            captureSession = cameraCaptureSession;
+            try{
+                captureSession.setRepeatingRequest(previewRequestBuilder.build(),null,null);
+            }catch (CameraAccessException e){
+                e.printStackTrace();
+            }
+        }
+
+        @Override
+        public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {
+             Toast.makeText(getActivity(),"카메라 캡쳐 세션 실패",Toast.LENGTH_SHORT).show();
+        }
+    };
+
 
     @SuppressLint("MissingPermission")
     private void openCamera(final int width, final int height){
@@ -106,18 +158,38 @@ public class RealtimeCameraFragment extends Fragment {
         final CameraManager manager = (CameraManager)activity.getSystemService(Context.CAMERA_SERVICE);
         setupCameraOutputs(manager);
         configureTransform(width,height);
-        /*
+
         try{
             if(!cameraOpenCloseLock.tryAcquire(2500, TimeUnit.MILLISECONDS)){
                 Toast.makeText(getContext(),"카메라 락 타임아웃",Toast.LENGTH_LONG).show();
                 activity.finish();
             }else{
-                //manager.openCamera(cameraId,,null);
+                manager.openCamera(cameraId,stateCallback,null);
             }
         }catch (final InterruptedException | CameraAccessException e){
             e.printStackTrace();
-        }*/
+        }
 
+    }
+
+    private void createCameraPreviewSession(){
+        try{
+            final SurfaceTexture texture = autoFitTextureView.getSurfaceTexture();
+            texture.setDefaultBufferSize(previewSize.getWidth(),previewSize.getHeight());
+
+            final Surface surface = new Surface(texture);
+
+            previewReader = ImageReader.newInstance(previewSize.getWidth(),previewSize.getHeight(), ImageFormat.YUV_420_888,2);
+            previewReader.setOnImageAvailableListener(imageAvailableListener,null);
+            previewRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+            previewRequestBuilder.addTarget(surface);
+            previewRequestBuilder.addTarget(previewReader.getSurface());
+            previewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+            previewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE,CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
+            cameraDevice.createCaptureSession(Arrays.asList(surface,previewReader.getSurface()),sessionStateCallback,null);
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
     }
 
     private void setupCameraOutputs(CameraManager manager){
@@ -166,7 +238,7 @@ public class RealtimeCameraFragment extends Fragment {
         final int rotation = activity.getDisplay().getRotation();
         final Matrix matrix = new Matrix();
         final RectF viewRect = new RectF(0,0, viewWidth,viewHeight);
-        final RectF bufferRect = new RectF(0,0,previewSize.getHeight(),previewSize.getWidth())
+        final RectF bufferRect = new RectF(0,0,previewSize.getHeight(),previewSize.getWidth());
         final float centerX = viewRect.centerX();
         final float centerY = viewRect.centerY();
         if(Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation){
