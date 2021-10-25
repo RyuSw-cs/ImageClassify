@@ -1,13 +1,20 @@
 package com.example.imageclassifier;
 
 import android.Manifest;
+import android.app.Fragment;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
+import android.media.Image;
+import android.media.ImageReader;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.util.Log;
+import android.util.Pair;
 import android.util.Size;
 import android.view.Surface;
 import android.view.WindowManager;
@@ -17,9 +24,11 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.fragment.app.Fragment;
+import android.app.Fragment;
+import android.app.FragmentManager;
 
 import java.io.IOException;
+import java.util.Locale;
 
 public class RealtimeCameraActivity extends AppCompatActivity {
     private static final String CAMERA_PERMISSION = Manifest.permission.CAMERA;
@@ -34,6 +43,10 @@ public class RealtimeCameraActivity extends AppCompatActivity {
 
     private Bitmap rgbFrameBitmap = null;
 
+    private boolean isProcessingFrame = false;
+
+    private HandlerThread handlerThread;
+    private Handler handler;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -49,13 +62,39 @@ public class RealtimeCameraActivity extends AppCompatActivity {
             e.printStackTrace();
         }
         if(checkSelfPermission(CAMERA_PERMISSION) == PackageManager.PERMISSION_GRANTED){
-
+            setFragment();
         }else{
             requestPermissions(new String[]{CAMERA_PERMISSION},PERMISSION_REQUEST_CODE);
         }
 
     }
 
+    @Override
+    protected synchronized void onResume() {
+        super.onResume();
+        handlerThread = new HandlerThread("InfereneceThread");
+        handlerThread.start();
+        handler = new Handler(handlerThread.getLooper());
+
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        try{
+            handlerThread.join();
+            handlerThread = null;
+            handler = null;
+        } catch (final InterruptedException e){
+            e.printStackTrace();
+        }
+        super.onPause();
+    }
+    protected synchronized void runInBackground(final Runnable r){
+        if(handler != null){
+            handler.post(r);
+        }
+    }
 
     private void init(){
         textView = findViewById(R.id.result);
@@ -65,10 +104,22 @@ public class RealtimeCameraActivity extends AppCompatActivity {
         Size inputSize = cls.getModelInputSize();
         String cameraId = chooseCamera();
         if(inputSize.getWidth() > 0 && inputSize.getHeight() > 0 && cameraId != null){
-            //프래그먼트 생성
+             Fragment fragment = RealtimeCameraFragment.newInstance(
+                     (size,rotation) ->{
+                         previewHeight = size.getHeight();
+                         previewWidth = size.getWidth();
+                         sensorOrientation = rotation - getScreenOrientation();
+                     },
+                     reader->processImage(reader),
+                     inputSize, 
+                     cameraId);
+             getFragmentManager().beginTransaction().replace(R.id.fragment,fragment).commit();
+        }else{
+            Toast.makeText(this,"카메라를 찾을 수 없습니다",Toast.LENGTH_SHORT).show();
         }
 
     }
+
 
     protected int getScreenOrientation(){
         switch (getDisplay().getRotation()){
@@ -104,7 +155,7 @@ public class RealtimeCameraActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         if(requestCode == PERMISSION_REQUEST_CODE){
             if(grantResults.length >0 && allPermissionsGranted(grantResults)){
-
+                 setFragment();
             }
             else{
                 Toast.makeText(this,"권한 거부", Toast.LENGTH_LONG).show();
@@ -119,5 +170,33 @@ public class RealtimeCameraActivity extends AppCompatActivity {
             }
         }
         return true;
+    }
+
+    protected  void processImage(ImageReader reader){
+        if(previewWidth == 0 || previewHeight == 0) return;
+        if(rgbFrameBitmap == null){
+            rgbFrameBitmap = Bitmap.createBitmap(previewWidth,previewHeight, Bitmap.Config.ARGB_8888);
+        }
+        if(isProcessingFrame) return;
+        isProcessingFrame = true;
+        final Image image = reader.acquireNextImage();
+        if(image == null){
+            isProcessingFrame = false;
+            return;
+        }
+        YuvToRgbConverter.yuvToRgb(this,image,rgbFrameBitmap);
+        runInBackground(()->{
+            if(cls != null && cls.isInitialized()){
+                final Pair<String,Float> output = cls.classify(rgbFrameBitmap,sensorOrientation);
+                runOnUiThread(()->{
+                    String resultStr = String.format(Locale.ENGLISH,"클래스 : %s\n정확도 : %.2f%%",output.first,output.second*100);
+                    textView.setText(resultStr);
+                });
+
+            }
+            image.close();
+            isProcessingFrame = false;
+        });
+
     }
 }

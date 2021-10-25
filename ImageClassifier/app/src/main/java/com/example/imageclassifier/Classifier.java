@@ -16,6 +16,8 @@ import org.tensorflow.lite.support.common.ops.NormalizeOp;
 import org.tensorflow.lite.support.image.ImageProcessor;
 import org.tensorflow.lite.support.image.TensorImage;
 import org.tensorflow.lite.support.image.ops.ResizeOp;
+import org.tensorflow.lite.support.image.ops.ResizeWithCropOrPadOp;
+import org.tensorflow.lite.support.image.ops.Rot90Op;
 import org.tensorflow.lite.support.label.TensorLabel;
 import org.tensorflow.lite.support.model.Model;
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
@@ -83,7 +85,10 @@ public class Classifier {
         outputBuffer = TensorBuffer.createFixedSize(outputTensor.shape(),outputTensor.dataType());
     }
     public Pair<String, Float> classify(Bitmap image) {
-        inputImage = loadImage(image);
+        return classify(image, 0);
+    }
+    public Pair<String, Float> classify(Bitmap image, int sensorOrientation) {
+        inputImage = loadImage(image,sensorOrientation);
         Object[] inputs = new Object[]{inputImage.getBuffer()};
         Map<Integer, Object> outputs = new HashMap();
         outputs.put(0, outputBuffer.getBuffer().rewind());
@@ -121,6 +126,25 @@ public class Classifier {
                 .add(new ResizeOp(modelInputWidth,modelInputHeight, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR))
                 .add(new NormalizeOp(0.0f,255.0f))
                 .build();
+        return imageProcessor.process(inputImage);
+    }
+    private TensorImage loadImage(final Bitmap bitmap, int sensorOrientation){
+        if(bitmap.getConfig() != Bitmap.Config.ARGB_8888){
+            inputImage.load(convertBitmapToARGB8888(bitmap));
+        }
+        else{
+            inputImage.load(bitmap);
+        }
+        int cropSize = Math.min(bitmap.getWidth(),bitmap.getHeight());
+        int numRotation = sensorOrientation / 90;
+
+        ImageProcessor imageProcessor=
+                new ImageProcessor.Builder()
+                        .add(new ResizeWithCropOrPadOp(cropSize,cropSize))
+                        .add(new ResizeOp(modelInputWidth,modelInputHeight, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR))
+                        .add(new Rot90Op(numRotation))
+                        .add(new NormalizeOp(0.0f,255.0f))
+                        .build();
         return imageProcessor.process(inputImage);
     }
     private Bitmap convertBitmapToARGB8888(Bitmap bitmap){
