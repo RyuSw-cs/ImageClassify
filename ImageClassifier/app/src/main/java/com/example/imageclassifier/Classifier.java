@@ -5,6 +5,7 @@ import android.content.res.AssetFileDescriptor;
 import android.content.res.AssetManager;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
+import android.os.Build;
 import android.util.Log;
 import android.util.Pair;
 import android.util.Size;
@@ -55,11 +56,18 @@ public class Classifier {
     /*
     모델 초기화 관련 초기화
      */
-    public void init() throws IOException{
-        model = Model.createModel(context,MODEL_NAME);
+    public void init() throws Exception {
+        model = createModel();
         initModelShape();
         labels = FileUtil.loadLabels(context, LABEL_FILE);
         isInitialized = true;
+    }
+    private Model createModel() throws Exception{
+        Model.Options.Builder optionBuilder = new Model.Options.Builder();
+        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P){
+            optionBuilder.setDevice(Model.Device.NNAPI);
+        }
+        return Model.createModel(context,MODEL_NAME,optionBuilder.build());
     }
 
     public boolean isInitialized(){
